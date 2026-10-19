@@ -37,6 +37,8 @@ export interface Watch {
   };
   /** measured power reserve, hours */
   prMeasured: number | null;
+  /** last local edit, epoch ms (sync merge) */
+  updatedAt?: number;
 }
 
 export interface Reading {
@@ -68,6 +70,8 @@ export interface Cycle {
   endedAt: number | null;
   note: string;
   entries: PrecisionEntry[];
+  /** last local edit, epoch ms (sync merge) */
+  updatedAt?: number;
 }
 
 export interface Settings {
@@ -85,6 +89,11 @@ export interface AppData {
   cycles: Cycle[];
   /** YYYY-MM-DD → watch ids worn that day */
   wear: Record<string, string[]>;
+  /** YYYY-MM-DD → last edit time of that day's wear list (sync merge) */
+  wearAt?: Record<string, number>;
+  /** deleted ids → deletion time, so a merge never resurrects them (sync).
+   *  Keys: watch/reading/cycle id, or `${cycleId}:${entryT}` for a deleted log entry. */
+  tombstones?: Record<string, number>;
   settings: Settings;
 }
 

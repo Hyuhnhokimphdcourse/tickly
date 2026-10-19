@@ -3,6 +3,7 @@ import { Linking, Pressable, Share, Text, TextInput, View } from 'react-native';
 
 import { Heatmap } from '@/components/charts';
 import { Button, Card, Chip, Field, Row, Screen, Section, T } from '@/components/ui';
+import { connectDrive, disconnectDrive, syncNow, useSync } from '@/lib/cloud/sync';
 import { getApiKey, setApiKey } from '@/lib/keychain';
 import { useNow } from '@/hooks/use-now';
 import { exportJson, importJson, patchSettings, toggleWear, useStore } from '@/lib/store';
@@ -26,6 +27,8 @@ export default function ProfileScreen() {
   const [la, setLa] = useState(String(data.settings.defaultLiftAngle));
   const [importText, setImportText] = useState('');
   const [importMsg, setImportMsg] = useState('');
+  const sync = useSync();
+  const [armOff, setArmOff] = useState(false);
 
   useEffect(() => { void getApiKey().then(k => { if (k) setKey(k); }); }, []);
 
@@ -75,6 +78,36 @@ export default function ProfileScreen() {
           <Row style={{ justifyContent: 'space-between' }}><T>가장 정확한 측정</T><T k="num">{stats.best && stats.bestWatch ? `${watchName(stats.bestWatch)} ${fmtRate(stats.best.rate)}` : '—'}</T></Row>
         </Card>
       </Section>
+
+      {sync.supported ? (
+        <Section title="구글 드라이브 백업·동기화">
+          <Card style={{ gap: S.md }}>
+            {sync.enabled ? (
+              <>
+                <Row style={{ justifyContent: 'space-between' }}>
+                  <T style={{ fontWeight: '700' }}>{sync.email ?? '연결됨'}</T>
+                  <T k="small" color={sync.status === 'ok' ? t.good : sync.status === 'error' ? t.bad : t.warn}>
+                    {sync.status === 'ok' ? '동기화됨' : sync.status === 'syncing' ? '동기화 중…' : sync.status === 'needs-auth' ? '다시 연결 필요' : '오류'}
+                  </T>
+                </Row>
+                <T k="small">{`내 드라이브 › Tickly › tickly-data.json${sync.lastSync ? ` · 마지막 동기화 ${new Date(sync.lastSync).toLocaleString('ko-KR')}` : ''}`}</T>
+                <Row gap={S.sm}>
+                  {sync.status === 'needs-auth' || sync.status === 'error'
+                    ? <Button style={{ flex: 1 }} kind="primary" title="다시 연결" onPress={connectDrive} />
+                    : <Button style={{ flex: 1 }} title="지금 동기화" disabled={sync.status === 'syncing'} onPress={() => void syncNow()} />}
+                  <Button kind="danger" title={armOff ? '정말 해제' : '연결 해제'} onPress={() => { if (!armOff) { setArmOff(true); return; } setArmOff(false); disconnectDrive(); }} />
+                </Row>
+              </>
+            ) : (
+              <>
+                <T k="small">측정 기록·정밀 로그·시계 정보·사진을 내 구글 드라이브(Tickly 폴더)에 저장합니다. 폰을 바꾸거나 다른 기기에서 열어도 기록이 이어집니다. 앱이 만든 파일 외에는 접근하지 않습니다.</T>
+                <Button kind="primary" title="Google 드라이브 연결" onPress={connectDrive} />
+              </>
+            )}
+            {sync.message ? <T k="small">{sync.message}</T> : null}
+          </Card>
+        </Section>
+      ) : null}
 
       <Section title="설정">
         <Card style={{ gap: S.md }}>

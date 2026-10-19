@@ -48,5 +48,6 @@ Acoustic timegrapher + watch collection app. UI language: Korean. Owner tests th
 - Before pushing, run: `npm run test:dsp`, `npx tsc --noEmit`, `npx expo lint`. Do not push if the DSP tests fail.
 - `src/dsp/timegrapher.ts` is the measurement core. Definitions follow vacaboja/tg: amplitude = LA / (2·sin(π·τ/T)), beat error = |T/2 − tic_to_toc|, rate = 86400·(P_nom/P_meas − 1). Any change there needs a new or updated case in `scripts/test-dsp.ts`.
 - Native mic: local Expo module `modules/tick-mic` (Swift, AVAudioEngine, `.measurement` mode). Web mic: `src/audio/mic.web.ts` (getUserMedia; `primeAudio()` must run synchronously inside the tap for iOS WebKit).
-- Data lives on-device (AsyncStorage / localStorage on web). No server.
+- Data lives on-device (AsyncStorage / localStorage on web) and, on web, syncs to the user's own Google Drive (`src/lib/cloud/`): GIS token model + Drive REST, scope `drive.file`, one JSON file `Tickly/tickly-data.json`. OAuth web client ID is in `src/lib/cloud/config.ts` (public; authorized origin `https://hyuhnhokimphdcourse.github.io`). Merge rules in `src/lib/cloud/merge.ts` (tombstones for deletions, `updatedAt` wins); run `npm run test:merge` after changing them. Native build: Drive is stubbed; plan is iCloud first.
+- Web photos are stored as downscaled JPEG data URLs (`src/lib/photo.web.ts`) so they survive reloads and travel in the sync file.
 - Diagnosis thresholds in `src/lib/diagnose.ts` cite their sources; keep app-defined rules labelled as such in the UI.

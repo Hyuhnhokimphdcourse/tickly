@@ -46,7 +46,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test:dsp": "node scripts/test-dsp.ts"
+    "test:dsp": "node scripts/test-dsp.ts",
+    "test:merge": "node scripts/test-merge.ts"
   },
   "private": true
 }

@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 
+import { SyncBanner } from '@/components/sync-banner';
 import { Button, Card, Chip, Empty, Pill, Row, Screen, Section, T } from '@/components/ui';
 import { fitPrecision } from '@/lib/precision';
 import { startCycle, useStore } from '@/lib/store';
@@ -34,6 +35,7 @@ export default function PrecisionList() {
 
   return (
     <Screen>
+      <SyncBanner />
       <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }}>
         <View style={{ gap: 4 }}>
           <T k="label">Precision log</T>

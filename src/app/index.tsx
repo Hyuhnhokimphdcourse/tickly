@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
+import { SyncBanner } from '@/components/sync-banner';
 import { TimingDiagram } from '@/components/charts';
 import { InputPanel } from '@/components/input-panel';
 import { Button, Card, Chip, Pill, Row, Screen, Section, Stat, T } from '@/components/ui';
@@ -84,6 +85,7 @@ export default function MeasureScreen() {
 
   return (
     <Screen>
+      <SyncBanner />
       <View style={{ gap: 4 }}>
         <T k="label">Timegrapher</T>
         <T k="h1">측정</T>

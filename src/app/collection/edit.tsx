@@ -1,4 +1,3 @@
-import { Directory, File, Paths } from 'expo-file-system';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -9,6 +8,7 @@ import { Button, Card, Chip, Field, Pill, Row, Screen, Section, T, WatchGlyph } 
 import { STANDARD_BPH } from '@/dsp/timegrapher';
 import { AiError, identifyWatch, type AiWatch } from '@/lib/ai';
 import { getApiKey } from '@/lib/keychain';
+import { persistPhoto } from '@/lib/photo';
 import { deleteWatch, saveWatch, useStore } from '@/lib/store';
 import { emptyWatch, MOVEMENT_LABEL, type Movement, type Source, type SpecSource, type Watch } from '@/lib/types';
 import { num } from '@/lib/util';
@@ -28,16 +28,6 @@ function toForm(w: Watch): Form {
     acquired: w.acquired, lastService: w.lastService, notes: w.notes, accMin: str(w.spec.accMin), accMax: str(w.spec.accMax),
     pr: str(w.spec.powerReserveH), jewels: str(w.spec.jewels), svc: str(w.spec.serviceYears), prMeasured: str(w.prMeasured),
   };
-}
-
-async function persistPhoto(uri: string): Promise<string> {
-  if (Platform.OS === 'web') return uri;
-  const dir = new Directory(Paths.document, 'photos');
-  dir.create({ idempotent: true, intermediates: true });
-  const src = new File(uri);
-  const dest = new File(dir, `${Date.now()}-${src.name || 'photo.jpg'}`);
-  await src.copy(dest);
-  return dest.uri;
 }
 
 export default function EditWatch() {

@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
+import { SyncBanner } from '@/components/sync-banner';
 import { Button, Card, Chip, Empty, Pill, Row, Screen, T, WatchThumb } from '@/components/ui';
 import { diagnose } from '@/lib/diagnose';
 import { useStore } from '@/lib/store';
@@ -33,6 +34,7 @@ export default function CollectionScreen() {
 
   return (
     <Screen>
+      <SyncBanner />
       <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }}>
         <View style={{ gap: 4 }}>
           <T k="label">Collection</T>

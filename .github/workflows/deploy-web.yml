@@ -28,6 +28,8 @@ jobs:
       - run: npm ci
       - name: Timegrapher DSP tests
         run: npm run test:dsp
+      - name: Sync merge tests
+        run: npm run test:merge
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Export web
