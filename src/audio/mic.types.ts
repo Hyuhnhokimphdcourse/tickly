@@ -2,6 +2,8 @@ export type MicPermission = 'granted' | 'denied' | 'undetermined';
 
 export interface MicSession {
   sampleRate: number;
+  /** short human-readable input description for diagnostics */
+  info?: () => string;
   stop(): void;
 }
 

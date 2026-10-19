@@ -364,6 +364,23 @@ export class Timegrapher {
     return best;
   }
 
+  /** Last `seconds` of the tick envelope, max-pooled to `points`, normalised to 0..1 (for a live scope). */
+  envTail(seconds: number, points: number): number[] {
+    const n = Math.min(this.envLen, Math.round(seconds * this.fsEnv));
+    if (n <= 0) return [];
+    const start = this.envLen - n;
+    const per = Math.max(1, Math.floor(n / points));
+    const out: number[] = [];
+    let mx = 1e-12;
+    for (let i = 0; i + per <= n; i += per) {
+      let m = 0;
+      for (let j = 0; j < per; j++) { const v = this.env[start + i + j]; if (v > m) m = v; }
+      out.push(m);
+      if (m > mx) mx = m;
+    }
+    return out.map(v => v / mx);
+  }
+
   analyze(): TimegrapherResult {
     const elapsed = this.elapsed;
     const base: TimegrapherResult = {

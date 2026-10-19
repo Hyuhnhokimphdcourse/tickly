@@ -3,9 +3,11 @@ import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { TimingDiagram } from '@/components/charts';
+import { InputPanel } from '@/components/input-panel';
 import { Button, Card, Chip, Pill, Row, Screen, Section, Stat, T } from '@/components/ui';
 import { STANDARD_BPH, STATE_LABEL, type LockState } from '@/dsp/timegrapher';
 import { useTimegrapher } from '@/hooks/use-timegrapher';
+import { audioFilesSupported, pickAudio, shareWav } from '@/lib/audio-files';
 import { addReading, useStore } from '@/lib/store';
 import { POSITIONS, type Position } from '@/lib/types';
 import { fmtDeg, fmtMs, fmtRate, watchName } from '@/lib/util';
@@ -55,6 +57,27 @@ export default function MeasureScreen() {
       bph: r.bph, liftAngle, quality: r.quality, beats: r.beats, seconds: Math.round(r.elapsed),
     });
     setSaved(true);
+  };
+
+  const [fileMsg, setFileMsg] = useState<string | null>(null);
+  const sendRecording = async () => {
+    const rec = tg.recording(15);
+    if (!rec) { setFileMsg('보낼 녹음이 없습니다. 먼저 측정을 시작하세요.'); return; }
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+    const res = await shareWav(rec.wav, `tickly-${stamp}${watch ? `-${(watch.caliber || watch.model || 'watch').replace(/\W+/g, '')}` : ''}.wav`);
+    setFileMsg(res === 'cancelled' ? null : res === 'shared' ? '공유했습니다. 이 대화에 파일을 첨부해 주세요.' : '파일을 저장했습니다(다운로드). 이 대화에 첨부해 주세요.');
+  };
+  const measureFile = async () => {
+    setFileMsg(null);
+    try {
+      const f = await pickAudio();
+      if (!f) return;
+      setSaved(false);
+      tg.analyzePcm(f.pcm, f.sampleRate, { bph, liftAngle });
+      setFileMsg(`${f.name} · ${(f.pcm.length / f.sampleRate).toFixed(0)}초 분석`);
+    } catch {
+      setFileMsg('이 파일을 열지 못했습니다. m4a·wav 녹음 파일을 선택하세요.');
+    }
   };
 
   const progress = running ? Math.min(1, tg.lockElapsed / seconds) : tg.phase === 'done' ? 1 : 0;
@@ -109,6 +132,7 @@ export default function MeasureScreen() {
             : `폰 하단(마이크)을 시계 케이스백에 대고 시작하세요. 고정 후 ${seconds}초 측정합니다.`}
         </T>
         <TimingDiagram points={r?.diagram ?? []} />
+        {tg.diag ? <InputPanel diag={tg.diag} running={running} /> : null}
         {tg.error ? <T k="small" color={t.bad}>{tg.error}</T> : null}
 
         {running ? (
@@ -124,6 +148,13 @@ export default function MeasureScreen() {
         {saved && watch ? (
           <Button kind="ghost" title="시계 상세 보기 →" onPress={() => router.push(`/collection/${watch.id}`)} />
         ) : null}
+        {audioFilesSupported ? (
+          <Row gap={S.sm} wrap>
+            {tg.diag && tg.diag.info !== '녹음 파일' ? <Button style={{ flexGrow: 1 }} title="진단 녹음 보내기 (15초)" onPress={() => void sendRecording()} /> : null}
+            {!running ? <Button style={{ flexGrow: 1 }} title="녹음 파일로 측정" onPress={() => void measureFile()} /> : null}
+          </Row>
+        ) : null}
+        {fileMsg ? <T k="small">{fileMsg}</T> : null}
       </Card>
 
       <Section title="자세 (선택)">

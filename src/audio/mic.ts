@@ -25,6 +25,7 @@ export async function startMic(h: MicHandlers): Promise<MicSession> {
     const sampleRate = await TickMic.start({ preferredSampleRate: 48000, bufferSize: 4096, useBottomMic: true });
     return {
       sampleRate,
+      info: () => `iOS · ${Math.round(sampleRate / 100) / 10} kHz · 내장 마이크`,
       stop() {
         TickMic.stop();
         audioSub.remove();
