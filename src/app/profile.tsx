@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Linking, Pressable, Share, Text, TextInput, View } from 'react-native';
 
 import { Heatmap } from '@/components/charts';
+import { JjyPanel } from '@/components/jjy-panel';
 import { Button, Card, Chip, Field, Row, Screen, Section, T } from '@/components/ui';
 import { connectDrive, disconnectDrive, syncNow, useSync } from '@/lib/cloud/sync';
 import { getApiKey, setApiKey } from '@/lib/keychain';
@@ -77,6 +78,10 @@ export default function ProfileScreen() {
           <Row style={{ justifyContent: 'space-between' }}><T>가장 많이 찬 시계</T><T k="num">{stats.topWatch ? `${watchName(stats.topWatch)} · ${stats.topDays}일` : '—'}</T></Row>
           <Row style={{ justifyContent: 'space-between' }}><T>가장 정확한 측정</T><T k="num">{stats.best && stats.bestWatch ? `${watchName(stats.bestWatch)} ${fmtRate(stats.best.rate)}` : '—'}</T></Row>
         </Card>
+      </Section>
+
+      <Section title="전파시계 맞추기 (JJY)">
+        <JjyPanel />
       </Section>
 
       {sync.supported ? (

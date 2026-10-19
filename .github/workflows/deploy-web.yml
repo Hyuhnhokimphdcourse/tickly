@@ -30,6 +30,8 @@ jobs:
         run: npm run test:dsp
       - name: Sync merge tests
         run: npm run test:merge
+      - name: JJY timecode tests
+        run: npm run test:jjy
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Export web

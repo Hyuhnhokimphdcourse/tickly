@@ -47,6 +47,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "test:dsp": "node scripts/test-dsp.ts",
+    "test:jjy": "node scripts/test-jjy.ts",
     "test:merge": "node scripts/test-merge.ts"
   },
   "private": true
