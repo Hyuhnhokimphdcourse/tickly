@@ -13,6 +13,13 @@ export interface JjySession {
  * Must be called synchronously inside a tap (iOS WebKit).
  */
 export function startJjy(carrier: 40 | 60): JjySession {
+  // iOS WebKit plays Web Audio in the "ambient" session, which the ring/silent switch mutes; it only
+  // became audible once the microphone (play-and-record session) was running. Ask for a playback
+  // session where the Audio Session API exists, otherwise route through an <audio> element, which
+  // iOS plays even in silent mode.
+  const nav = navigator as Navigator & { audioSession?: { type: string } };
+  const hasSession = !!nav.audioSession;
+  if (hasSession) { try { nav.audioSession!.type = 'playback'; } catch { /* read-only */ } }
   const ctx = new AudioContext();
   void ctx.resume().catch(() => {});
   const osc = ctx.createOscillator();
@@ -20,7 +27,16 @@ export function startJjy(carrier: 40 | 60): JjySession {
   osc.frequency.value = JJY_TONE[carrier];
   const amp = ctx.createGain();
   amp.gain.value = 0;
-  osc.connect(amp).connect(ctx.destination);
+  osc.connect(amp);
+  let el: HTMLAudioElement | null = null;
+  if (hasSession) amp.connect(ctx.destination);
+  else {
+    const dest = ctx.createMediaStreamDestination();
+    amp.connect(dest);
+    el = new Audio();
+    el.srcObject = dest.stream;
+    void el.play().catch(() => amp.connect(ctx.destination));
+  }
   osc.start();
 
   /** audio-clock time at which wall-clock `ms` is heard */
@@ -58,7 +74,9 @@ export function startJjy(carrier: 40 | 60): JjySession {
     stop() {
       clearInterval(timer);
       try { osc.stop(); } catch { /* already stopped */ }
+      if (el) { el.pause(); el.srcObject = null; }
       void ctx.close().catch(() => {});
+      if (hasSession) { try { nav.audioSession!.type = 'auto'; } catch { /* ignore */ } }
     },
     status: () => current,
   };

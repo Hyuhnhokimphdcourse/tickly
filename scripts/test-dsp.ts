@@ -50,23 +50,27 @@ for (const c of cases) {
   );
 }
 // ---- real recordings (iPhone Chrome, phone on the crystal) ----
-interface RealCase { file: string; name: string; bph: number; liftAngle: number; rate: [number, number] }
+interface RealCase { file: string; name: string; bph: number; liftAngle: number; rate: [number, number]; amp?: [number, number]; minQ?: number }
 const real: RealCase[] = [
   // Citizen NY0040 (cal. 8203), very weak input (peak ≈ −61 dBFS, ticks ≈ 6 dB above noise)
-  { file: 'ny0040-iphone-chrome.wav', name: 'real NY0040 weak, auto-BPH', bph: 21600, liftAngle: 49, rate: [2, 6] },
+  { file: 'ny0040-iphone-chrome.wav', name: 'real NY0040 weak, auto-BPH', bph: 21600, liftAngle: 49, rate: [2, 6], minQ: 0.9 },
+  // same watch, second session (float WAV, peak ≈ −73 dBFS); faint unlock sound only visible after averaging
+  { file: 'ny0040-iphone-chrome-2.wav', name: 'real NY0040 #2, auto-BPH + amplitude', bph: 21600, liftAngle: 49, rate: [4, 8], amp: [240, 285], minQ: 0.9 },
 ];
 for (const c of real) {
   const b = readFileSync(new URL(`./fixtures/${c.file}`, import.meta.url));
-  const fs = b.readUInt32LE(24), n = (b.length - 44) / 2;
+  const fmt = b.readUInt16LE(20), fs = b.readUInt32LE(24), n = (b.length - 44) / (fmt === 3 ? 4 : 2);
   const pcm = new Float32Array(n);
-  for (let i = 0; i < n; i++) pcm[i] = b.readInt16LE(44 + i * 2) / 32768;
+  for (let i = 0; i < n; i++) pcm[i] = fmt === 3 ? b.readFloatLE(44 + i * 4) : b.readInt16LE(44 + i * 2) / 32768;
   const tg = new Timegrapher({ sampleRate: fs, bph: null, liftAngle: c.liftAngle, windowSeconds: n / fs });
   for (let i = 0; i < n; i += 4096) {
     tg.push(pcm.subarray(i, Math.min(n, i + 4096)));
     if ((i / 4096) % 6 === 0) tg.analyze();
   }
   const r = tg.analyze();
-  const ok = r.bph === c.bph && r.rate != null && r.rate >= c.rate[0] && r.rate <= c.rate[1];
+  const ok = r.bph === c.bph && r.rate != null && r.rate >= c.rate[0] && r.rate <= c.rate[1]
+    && r.quality >= (c.minQ ?? 0)
+    && (!c.amp || (r.amplitude != null && r.amplitude >= c.amp[0] && r.amplitude <= c.amp[1]));
   if (!ok) fail++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${c.name.padEnd(40)} bph=${r.bph} state=${r.state} rate=${r.rate?.toFixed(2)} BE=${r.beatError?.toFixed(2)} amp=${r.amplitude?.toFixed(0)} q=${(r.quality * 100).toFixed(0)}% ${r.beats}/${r.expected}`);
 }

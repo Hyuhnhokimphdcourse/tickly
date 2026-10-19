@@ -1,7 +1,8 @@
 /**
  * Acoustic timegrapher core (platform-independent, pure TypeScript).
  *
- * Pipeline: high-pass → squared envelope → decimate → BPH detection (autocorrelation)
+ * Pipeline: high-pass (3 parallel bands, the one with the clearest beat periodicity is used)
+ *           → squared envelope → decimate → BPH detection (autocorrelation)
  *           → beat peak picking → first-sound onset → robust fit t_k = a + b·k + c·(−1)^k
  *
  * Conventions (same as the open-source timegrapher "tg", vacaboja/tg src/algo.c):
@@ -50,6 +51,8 @@ export interface TimegrapherOptions {
   liftAngle?: number | null;
   /** analysis window, seconds (beats older than this are ignored for rate/BE/amp) */
   windowSeconds?: number;
+  /** force one analysis band (index into the high-pass list; testing/diagnostics) */
+  band?: number;
 }
 
 interface Beat {
@@ -64,6 +67,19 @@ interface Beat {
 }
 
 const ENV_TARGET_RATE = 12000;
+/**
+ * High-pass corner of each analysis band. Phone mics on a watch case pick up handling/room noise
+ * mostly below a few kHz, while the escapement clicks are broadband: in real iPhone recordings the
+ * tick-to-noise ratio was about 2× better above 8 kHz than above 1.5 kHz. Which band wins depends on
+ * the watch, phone and room, so all are computed and the clearest is chosen automatically.
+ */
+const BAND_HP = [1500, 4000, 8000];
+
+interface Band {
+  fc: number;
+  hp1: Biquad; hp2: Biquad; lp: Biquad;
+  env: Float32Array;
+}
 
 class Biquad {
   private b0: number; private b1: number; private b2: number; private a1: number; private a2: number;
@@ -99,7 +115,10 @@ export class Timegrapher {
   readonly fs: number;
   readonly fsEnv: number;
   private decim: number;
-  private hp1: Biquad; private hp2: Biquad; private lp: Biquad;
+  private bands: Band[];
+  private band = 0;
+  private bandCheckedAt = -1;
+  private forcedBand: number | null = null;
   private env: Float32Array;
   private envLen = 0;
   private decCount = 0;
@@ -121,14 +140,23 @@ export class Timegrapher {
     this.fs = opts.sampleRate;
     this.decim = Math.max(1, Math.round(this.fs / ENV_TARGET_RATE));
     this.fsEnv = this.fs / this.decim;
-    this.hp1 = new Biquad('hp', 1500, this.fs);
-    this.hp2 = new Biquad('hp', 1500, this.fs);
-    this.lp = new Biquad('lp', Math.min(2500, this.fsEnv * 0.4), this.fs);
-    this.env = new Float32Array(Math.ceil(this.fsEnv * 20));
+    this.bands = BAND_HP.filter(fc => fc < this.fs * 0.3).map(fc => ({
+      fc,
+      hp1: new Biquad('hp', fc, this.fs),
+      hp2: new Biquad('hp', fc, this.fs),
+      lp: new Biquad('lp', Math.min(2500, this.fsEnv * 0.4), this.fs),
+      env: new Float32Array(Math.ceil(this.fsEnv * 20)),
+    }));
+    this.forcedBand = opts.band != null && this.bands[opts.band] ? opts.band : null;
+    this.band = this.forcedBand ?? 0;
+    this.env = this.bands[this.band].env;
     this.fixedBph = opts.bph ?? null;
     this.liftAngle = opts.liftAngle ?? null;
     this.windowSeconds = opts.windowSeconds ?? 30;
   }
+
+  /** high-pass corner (Hz) of the band currently used for analysis */
+  get bandHz(): number { return this.bands[this.band].fc; }
 
   get bph(): number | null { return this.fixedBph ?? this.detectedBph; }
   get elapsed(): number { return this.samples / this.fs; }
@@ -148,24 +176,37 @@ export class Timegrapher {
   /** Feed mono PCM samples (−1..1). */
   push(chunk: Float32Array) {
     const need = this.envLen + Math.ceil(chunk.length / this.decim) + 2;
-    if (need > this.env.length) {
-      const grown = new Float32Array(Math.max(need, this.env.length * 2));
-      grown.set(this.env.subarray(0, this.envLen));
-      this.env = grown;
-    }
-    for (let i = 0; i < chunk.length; i++) {
-      const h = this.hp2.step(this.hp1.step(chunk[i]));
-      const e = this.lp.step(h * h);
-      if (++this.decCount >= this.decim) {
-        this.decCount = 0;
-        this.env[this.envLen++] = e > 0 ? Math.sqrt(e) : 0;
+    for (const B of this.bands) {
+      if (need > B.env.length) {
+        const grown = new Float32Array(Math.max(need, B.env.length * 2));
+        grown.set(B.env.subarray(0, this.envLen));
+        B.env = grown;
       }
     }
+    const nb = this.bands.length;
+    const last = new Float64Array(nb);
+    let dc = this.decCount, len = this.envLen;
+    for (let i = 0; i < chunk.length; i++) {
+      const x = chunk[i];
+      for (let k = 0; k < nb; k++) {
+        const B = this.bands[k];
+        const h = B.hp2.step(B.hp1.step(x));
+        last[k] = B.lp.step(h * h);
+      }
+      if (++dc >= this.decim) {
+        dc = 0;
+        for (let k = 0; k < nb; k++) this.bands[k].env[len] = last[k] > 0 ? Math.sqrt(last[k]) : 0;
+        len++;
+      }
+    }
+    this.decCount = dc;
+    this.envLen = len;
+    this.env = this.bands[this.band].env;
     this.samples += chunk.length;
   }
 
-  /** Auto-detect BPH from the last few seconds of envelope. */
-  private detectBph(): number | null {
+  /** Periodicity score of each standard BPH over the last few seconds of one band's envelope. */
+  private periodicity(env: Float32Array): { bph: number; P: number; s: number }[] | null {
     const secs = Math.min(6, this.envLen / this.fsEnv);
     if (secs < 2.5) return null;
     const pool = Math.max(1, Math.round(this.fsEnv / 1000)); // ~1 kHz coarse envelope
@@ -174,7 +215,7 @@ export class Timegrapher {
     const c = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       let m = 0;
-      for (let j = 0; j < pool; j++) { const v = this.env[start + i * pool + j]; if (v > m) m = v; }
+      for (let j = 0; j < pool; j++) { const v = env[start + i * pool + j]; if (v > m) m = v; }
       c[i] = m;
     }
     // widen each tick to ~6 ms so tic/toc stay aligned in the autocorrelation despite beat error
@@ -210,10 +251,49 @@ export class Timegrapher {
       for (let l = lo; l <= hi; l++) if (l > 0 && l < n / 2) best = Math.max(best, ac(l));
       return best / e0;
     };
-    const scored = STANDARD_BPH.map(bph => {
+    return STANDARD_BPH.map(bph => {
       const P = 3600 / bph;
       return { bph, P, s: scoreAt(P) + 0.5 * scoreAt(2 * P) };
     });
+  }
+
+  /** Tick prominence of one band over the last few seconds: loud-tail level over the median. */
+  private prominence(env: Float32Array): number {
+    const n = Math.min(this.envLen, Math.round(6 * this.fsEnv));
+    if (n < this.fsEnv) return 0;
+    const [p50, p995] = percentile(env, this.envLen - n, this.envLen, [0.5, 0.995], 3);
+    return p50 > 0 ? p995 / p50 : 0;
+  }
+
+  /**
+   * Pick the band where the ticks stand out most from the noise (among bands that show the beat
+   * periodicity about as clearly as the best one); returns its BPH scores.
+   */
+  private chooseBand(): { bph: number; P: number; s: number }[] | null {
+    const all = this.bands.map(B => this.periodicity(B.env));
+    if (this.forcedBand != null) return all[this.band];
+    const fit = (sc: { bph: number; s: number }[] | null) => {
+      if (!sc) return -Infinity;
+      if (this.fixedBph != null) return sc.find(x => x.bph === this.fixedBph)?.s ?? -Infinity;
+      return Math.max(...sc.map(x => x.s));
+    };
+    const fits = all.map(fit);
+    const bestFit = Math.max(...fits);
+    if (!(bestFit > 0.2)) return all[this.band];
+    const prom = this.bands.map((B, k) => (fits[k] >= 0.6 * bestFit ? this.prominence(B.env) : 0));
+    let bestK = this.band;
+    for (let k = 0; k < prom.length; k++) if (prom[k] > prom[bestK] * 1.1) bestK = k;
+    if (bestK !== this.band) {
+      this.band = bestK;
+      this.env = this.bands[bestK].env;
+      this.resetBeats();
+    }
+    return all[this.band];
+  }
+
+  /** Auto-detect BPH from the chosen band's scores. */
+  private detectBph(scored: { bph: number; P: number; s: number }[] | null): number | null {
+    if (!scored) return null;
     const best = scored.reduce((a, b) => (b.s > a.s ? b : a));
     if (!(best.s > 0.25)) return null;
     // prefer the shortest period that explains the signal almost as well (avoid sub-harmonics)
@@ -386,14 +466,92 @@ export class Timegrapher {
     return out.map(v => v / mx);
   }
 
+  /**
+   * Amplitude from beat-synchronous averages (separately for tic and toc), in every band; single
+   * beats from a phone mic are usually too noisy to see the faint unlock sound, but averaging N
+   * beats lowers the noise by about √N. τ = first-sound onset → last-sound onset (half-height),
+   * amplitude = LA / (2·sin(π·τ/T)) as in tg. The band where the first sound stands out most wins.
+   */
+  private averagedAmplitude(times: number[], ks: number[], b: number, liftAngle: number): number | null {
+    const fe = this.fsEnv, T = 2 * b;
+    const tauMax = this.pulseMax(b);
+    const pre = Math.ceil((tauMax + 0.003) * fe), post = Math.ceil(0.006 * fe);
+    // quiet reference region well after the beat (ringing has decayed, next beat not yet due)
+    const q0 = Math.round(0.3 * b * fe), q1 = Math.round(0.45 * b * fe);
+    const L = pre + post + 1;
+    let best: { A: number; snr: number } | null = null;
+    for (const B of this.bands) {
+      const taus: number[] = [];
+      let snrMin = Infinity;
+      for (const par of [0, 1]) {
+        const w = new Float64Array(L), q = new Float64Array(q1 - q0);
+        let n = 0;
+        for (let i = 0; i < times.length; i++) {
+          if (!isFinite(times[i]) || ks[i] % 2 !== par) continue;
+          const c0 = Math.round(times[i] * fe);
+          if (c0 - pre < 1 || c0 + q1 >= this.envLen) continue;
+          for (let j = 0; j < L; j++) w[j] += B.env[c0 - pre + j];
+          for (let j = 0; j < q.length; j++) q[j] += B.env[c0 + q0 + j];
+          n++;
+        }
+        if (n < 6) return null;
+        for (let j = 0; j < L; j++) w[j] /= n;
+        let mu = 0; for (let j = 0; j < q.length; j++) { q[j] /= n; mu += q[j]; }
+        mu /= q.length;
+        let sd = 0; for (let j = 0; j < q.length; j++) sd += (q[j] - mu) ** 2;
+        sd = Math.sqrt(sd / q.length) || 1e-12;
+        // main (loudest) sound near the fitted time
+        let m = pre;
+        for (let j = pre - Math.round(0.002 * fe); j <= pre + Math.round(0.002 * fe); j++) if (w[j] > w[m]) m = j;
+        const H = w[m] - mu;
+        if (H < 8 * sd) { snrMin = 0; break; }
+        const thr = mu + Math.max(6 * sd, 0.06 * H);
+        // separate events: local maxima above thr with a dip to below half their height before
+        // the next louder part (ringing of the same sound does not dip)
+        const isEvent = (j: number, towards: number) => {
+          if (w[j] < thr || w[j] < w[j - 1] || w[j] < w[j + 1]) return false;
+          const half = mu + 0.5 * (w[j] - mu);
+          const s1 = towards > j ? 1 : -1;
+          for (let k = j + s1; k !== towards; k += s1) if (w[k] < half) return true;
+          return false;
+        };
+        let first = m, last = m;
+        const gap = Math.round(0.0015 * fe);
+        for (let j = 1; j < m - gap; j++) if (isEvent(j, m)) { first = j; break; }
+        for (let j = L - 2; j > m + gap; j--) if (isEvent(j, m)) { last = j; break; }
+        if (first === last) { snrMin = 0; break; }
+        const rise = (pk: number) => {
+          const lvl = mu + 0.5 * (w[pk] - mu);
+          let j = pk; while (j > 1 && w[j - 1] >= lvl) j--;
+          const f = w[j] > w[j - 1] ? (lvl - w[j - 1]) / (w[j] - w[j - 1]) : 1;
+          return (j - 1 + Math.min(1, Math.max(0, f))) / fe;
+        };
+        taus.push(rise(last) - rise(first));
+        snrMin = Math.min(snrMin, (w[first] - mu) / sd);
+      }
+      if (taus.length !== 2 || !(snrMin >= 6)) continue;
+      const amps = taus.map(tau => liftAngle / (2 * Math.sin((Math.PI * tau) / T)));
+      const A = (amps[0] + amps[1]) / 2;
+      if (!(A >= 120 && A <= 360) || Math.abs(amps[0] - amps[1]) > 40) continue;
+      if (!best || snrMin > best.snr) best = { A, snr: snrMin };
+    }
+    return best ? best.A : null;
+  }
+
   analyze(): TimegrapherResult {
     const elapsed = this.elapsed;
     const base: TimegrapherResult = {
       state: 'listening', bph: this.bph, bphAuto: this.fixedBph == null, rate: null, beatError: null,
       amplitude: null, quality: 0, beats: 0, expected: 0, elapsed, diagram: [], jitterMs: null,
     };
-    if (this.fixedBph == null && !this.lockedOnce) {
-      const d = this.detectBph();
+    // re-evaluate the analysis band about once a second: through the first 8 s, and until the first lock
+    let scored: { bph: number; P: number; s: number }[] | null = null;
+    if ((elapsed < 8 || !this.lockedOnce) && elapsed - this.bandCheckedAt >= 1) {
+      this.bandCheckedAt = elapsed;
+      scored = this.chooseBand();
+    }
+    if (this.fixedBph == null && !this.lockedOnce && scored) {
+      const d = this.detectBph(scored);
       if (d != null && d !== this.detectedBph) { this.detectedBph = d; this.resetBeats(); }
     }
     const bph = this.bph;
@@ -486,17 +644,9 @@ export class Timegrapher {
     }
 
     if (this.liftAngle) {
-      const T = 2 * b;
-      const tic: number[] = [], toc: number[] = [];
-      for (let i = 0; i < bs.length; i++) if (use[i] && isFinite(bs[i].pulse)) (ks[i] % 2 === 0 ? tic : toc).push(bs[i].pulse);
-      const med = (v: number[]) => { const s = v.slice().sort((x, y) => x - y); return s.length >= 4 ? s[Math.floor(s.length / 2)] : NaN; };
-      const amps = [med(tic), med(toc)]
-        .filter(p => isFinite(p) && p > 0)
-        .map(p => this.liftAngle! / (2 * Math.sin((Math.PI * p) / T)));
-      if (amps.length) {
-        const A = amps.reduce((x, y) => x + y, 0) / amps.length;
-        if (A >= 120 && A <= 360) base.amplitude = A;
-      }
+      const fitT = (i: number) => a[seg[i]] + b * ks[i] + c * (ks[i] % 2 === 0 ? 1 : -1);
+      const A = this.averagedAmplitude(bs.map((_, i) => (use[i] ? fitT(i) : NaN)), ks, b, this.liftAngle);
+      if (A != null) base.amplitude = A;
     }
     return (this.lastAnalysis = base);
   }
