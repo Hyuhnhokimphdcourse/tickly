@@ -33,6 +33,7 @@ export default function CycleDetail() {
   if (!c || !w) return <Screen><Empty title="사이클을 찾을 수 없습니다" body="삭제되었을 수 있습니다." action={<Button title="돌아가기" onPress={() => router.back()} />} /></Screen>;
 
   const fit = fitPrecision(c.entries);
+  const quartz = w.movement === 'quartz';
   const entries = c.entries.slice().sort((a, b) => a.t - b.t);
   const range = w.spec.accMin != null && w.spec.accMax != null ? { lo: w.spec.accMin, hi: w.spec.accMax } : null;
   const inSpec = fit && range ? fit.rate >= range.lo && fit.rate <= range.hi : null;
@@ -59,15 +60,16 @@ export default function CycleDetail() {
           {inSpec != null ? <Pill level={inSpec ? 'good' : 'warn'}>{inSpec ? '사양 이내' : '사양 밖'}</Pill> : null}
         </Row>
         <Row style={{ alignItems: 'baseline', gap: 6 }}>
-          <Text style={{ fontFamily: mono, fontSize: 48, fontWeight: '700', color: fit ? t.ink : t.faint, letterSpacing: -1 }}>{fmtRate(fit?.rate ?? null)}</Text>
-          <T k="small">s/d (착용 중 관측)</T>
+          <Text style={{ fontFamily: mono, fontSize: 48, fontWeight: '700', color: fit ? t.ink : t.faint, letterSpacing: -1 }}>{quartz ? fmtRate(fit ? fit.rate * 30.4 : null) : fmtRate(fit?.rate ?? null)}</Text>
+          <T k="small">{quartz ? `초/월 (착용 중 관측${fit ? ` · ${fmtRate(fit.rate, 2)} s/d` : ''})` : 's/d (착용 중 관측)'}</T>
         </Row>
         <Row gap={S.lg}>
           <Stat label="기록" value={String(entries.length)} unit="회" />
           <Stat label="기간" value={fit ? fit.spanDays.toFixed(1) : '0'} unit="일" />
           <Stat label="표준오차" value={fit?.se != null ? `±${fit.se.toFixed(2)}` : '—'} unit="s/d" />
         </Row>
-        <T k="small">{`${fmtDate(c.startedAt)} 시작${range ? ` · 사양 ${fmtRate(range.lo, 0)}/${fmtRate(range.hi, 0)} s/d` : ''}`}</T>
+        <T k="small">{`${fmtDate(c.startedAt)} 시작${range ? (quartz ? ` · 사양 ±${Math.round(range.hi * 30.4)} 초/월` : ` · 사양 ${fmtRate(range.lo, 0)}/${fmtRate(range.hi, 0)} s/d`) : ''}`}</T>
+        {quartz && (!fit || fit.spanDays < 7) ? <T k="small">쿼츠는 오차가 작아서 1주 이상 기록해야 사양과 비교할 수 있습니다.</T> : null}
       </Card>
 
       {open && mode === 'view' ? (

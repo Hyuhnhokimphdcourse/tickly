@@ -128,10 +128,10 @@ export default function MeasureScreen() {
             ? r?.state === 'locked'
               ? `측정 중 ${Math.floor(tg.lockElapsed)} / ${seconds}초 · ${r.beats}/${r.expected} 비트`
               : state === 'noisy' ? '주변 소음이 큽니다. 조용한 곳으로 옮기세요.'
-              : state === 'weak' || state === 'lost' ? '신호가 약합니다. 폰 하단을 케이스백에 밀착하세요.'
+              : state === 'weak' || state === 'lost' ? '신호가 약합니다. 시계를 눕히고 폰 하단을 유리에 밀착하세요.'
               : '틱 소리를 찾는 중…'
             : tg.phase === 'done' ? `완료 · ${r?.beats ?? 0}비트 · 잔차 ${r?.jitterMs?.toFixed(2) ?? '—'} ms`
-            : `폰 하단(마이크)을 시계 케이스백에 대고 시작하세요. 고정 후 ${seconds}초 측정합니다.`}
+            : `시계를 눕히고, 폰을 세워 하단(마이크)을 시계 유리에 대고 시작하세요. 고정 후 ${seconds}초 측정합니다.`}
         </T>
         <TimingDiagram points={r?.diagram ?? []} />
         {tg.diag ? <InputPanel diag={tg.diag} running={running} /> : null}
@@ -195,7 +195,9 @@ export default function MeasureScreen() {
       <Card style={{ gap: 6, backgroundColor: t.surface2 }}>
         <T k="h3">정확하게 재려면</T>
         <T k="small">· 태엽을 완전히 감은 상태에서, 조용한 방에서 잽니다.</T>
-        <T k="small">· 폰 하단 마이크를 케이스백(또는 크리스털)에 밀착하고 움직이지 않습니다.</T>
+        <T k="small">· 시계를 눕혀 두고 폰을 세워서, 폰 하단 마이크를 시계 유리(또는 케이스백)에 평평하게 밀착합니다. 폰 케이스를 끼운 쪽이 소리를 더 잘 잡습니다.</T>
+        <T k="small">· BPH 자동 감지가 안 되면, 아래 1초 파형의 틱 수 × 3600을 BPH로 고르세요 (6개 = 21,600, 8개 = 28,800).</T>
+        <T k="small">· 진폭은 자리 잡는 데 시간이 걸립니다. 롱(60초) 측정을 권장합니다.</T>
         <T k="small">· 블루투스 이어폰은 끊어 두세요. 내장 마이크를 씁니다.</T>
         <T k="small">· 폰 오디오 클럭 오차가 일오차에 그대로 더해집니다. 실제 착용 일오차는 정밀 로그로 확인하세요.</T>
       </Card>

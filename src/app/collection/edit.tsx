@@ -7,6 +7,7 @@ import { Linking, Platform, Pressable, View } from 'react-native';
 import { Button, Card, Chip, Field, Pill, Row, Screen, Section, T, WatchGlyph } from '@/components/ui';
 import { STANDARD_BPH } from '@/dsp/timegrapher';
 import { AiError, identifyWatch, type AiWatch } from '@/lib/ai';
+import { CATALOG, findCatalog, type CatalogEntry } from '@/lib/catalog';
 import { getApiKey } from '@/lib/keychain';
 import { persistPhoto } from '@/lib/photo';
 import { deleteWatch, saveWatch, useStore } from '@/lib/store';
@@ -49,6 +50,23 @@ export default function EditWatch() {
   const set = (k: keyof Form) => (v: string) => {
     setF(prev => ({ ...prev, [k]: v }));
     if (['accMin', 'accMax', 'pr', 'jewels', 'svc', 'bph', 'liftAngle'].includes(k)) specTouched.current = true;
+  };
+
+  const [applied, setApplied] = useState<string | null>(null);
+  const suggestion = findCatalog(f.model, f.ref, f.caliber);
+  const applyCatalog = (e: CatalogEntry) => {
+    const r2 = (v: number | null) => (v == null ? '' : String(Math.round(v * 100) / 100));
+    setF(prev => ({
+      ...prev,
+      brand: prev.brand.trim() || e.brand, model: prev.model.trim() || e.model, ref: prev.ref.trim() || (e.ref ?? ''), caliber: e.caliber,
+      bph: r2(e.bph), liftAngle: r2(e.liftAngle), accMin: r2(e.accMin), accMax: r2(e.accMax), pr: r2(e.powerReserveH),
+      jewels: r2(e.jewels), svc: r2(e.serviceYears), notes: prev.notes.trim() || (e.note ?? ''),
+    }));
+    setMovement(e.movement);
+    setSources(e.sources);
+    setSpecSrc('verified');
+    specTouched.current = false;
+    setApplied(e.key);
   };
 
   const pick = async (camera: boolean) => {
@@ -154,6 +172,22 @@ export default function EditWatch() {
         ) : null}
         {!photo?.base64 && photo ? <T k="small">사진 식별은 새로 찍거나 고른 사진에서만 됩니다.</T> : null}
       </Card>
+
+      {!original ? (
+        <Section title="내장 목록에서 바로 추가 (API 키 불필요)">
+          <Row wrap gap={S.sm}>
+            {CATALOG.map(e => <Chip key={e.key} label={`${e.brand} ${e.ref ?? e.model}`} selected={applied === e.key} onPress={() => applyCatalog(e)} />)}
+          </Row>
+        </Section>
+      ) : null}
+
+      {suggestion && applied !== suggestion.key ? (
+        <Card style={{ gap: S.sm, backgroundColor: t.accentSoft }}>
+          <T style={{ fontWeight: '700' }}>{`내장 사양이 있습니다: ${suggestion.brand} ${suggestion.ref ?? suggestion.model} · Cal. ${suggestion.caliber}`}</T>
+          <T k="small">{`${suggestion.accLabel}${suggestion.bph ? ` · ${suggestion.bph.toLocaleString()} bph · 리프트각 ${suggestion.liftAngle ?? '—'}°` : ''} · ${suggestion.powerReserveLabel}`}</T>
+          <Button kind="primary" title="이 사양 적용 (출처 포함)" onPress={() => applyCatalog(suggestion)} />
+        </Card>
+      ) : null}
 
       <Section title="기본 정보">
         <Row gap={S.md}><Field label="브랜드" value={f.brand} onChangeText={set('brand')} /><Field label="모델" value={f.model} onChangeText={set('model')} /></Row>

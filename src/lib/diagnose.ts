@@ -34,6 +34,33 @@ export interface Diagnosis {
 const REF_TG = { title: 'Watchscanning — 타임그래퍼 판독', url: 'https://www.watchscanning.com/guides/how-to-read-a-timegrapher/' };
 const REF_MAG = { title: 'Watchscanning — 자기화 진단', url: 'https://www.watchscanning.com/guides/magnetized-watch-fix/' };
 
+const REF_ECO = { title: 'Citizen 지원 — 초침이 건너뛰면 충전 필요', url: 'https://support.citizenwatch.com/hc/en-us/articles/360007591314-The-second-hand-on-my-eco-drive-watch-jumps-instead-of-ticking-every-second' };
+const perMonth = (sd: number) => `${sd >= 0 ? '+' : '−'}${Math.abs(sd * 30.4).toFixed(1)} 초/월`;
+
+/** Quartz: no tick acoustics; judge the worn rate from the precision log against the monthly spec. */
+function diagnoseQuartz(w: Watch, cyclesAll: Cycle[]): Diagnosis {
+  const F: Finding[] = [];
+  const cycles = cyclesAll.filter(c => c.watchId === w.id).sort((a, b) => a.startedAt - b.startedAt);
+  const open = cycles.filter(c => c.endedAt == null).pop() ?? cycles[cycles.length - 1];
+  const fit = open ? fitPrecision(open.entries) : null;
+  const range = w.spec.accMin != null && w.spec.accMax != null ? [w.spec.accMin, w.spec.accMax] as const : null;
+  if (!fit || fit.spanDays < 3) {
+    F.push({ level: 'none', title: '정밀 로그 3일 이상 필요', detail: '쿼츠는 오차가 하루 1초 미만이라, 정밀 로그를 1주 이상 기록해야 사양과 비교할 수 있습니다. 타임그래퍼(소리 측정)는 쿼츠에 쓰지 않습니다.' });
+    return { level: 'none', verdict: '판단 보류', summary: '쿼츠 시계는 정밀 로그로 판단합니다.', findings: F };
+  }
+  const label = `${perMonth(fit.rate)} (${fit.spanDays.toFixed(1)}일)`;
+  if (!range) {
+    F.push({ level: 'none', title: `관측 ${label}`, detail: '사양(초/월)을 입력하면 비교합니다.' });
+    return { level: 'none', verdict: '판단 보류', summary: '사양이 없어 비교하지 못했습니다.', findings: F };
+  }
+  const ok = fit.rate >= range[0] && fit.rate <= range[1];
+  F.push({ level: ok ? 'good' : 'warn', title: `${ok ? '사양 이내' : '사양 밖'} ${label} · 사양 ±${(range[1] * 30.4).toFixed(0)} 초/월` });
+  if (!ok) F.push({ level: 'warn', title: '충전·전지 확인', detail: '솔라(에코드라이브) 시계는 초침이 2초씩 건너뛰면 충전 부족입니다. 빛에 충분히 두거나, 전지식이면 전지를 확인하세요. 그래도 사양 밖이면 점검을 받으세요.', ref: REF_ECO });
+  return ok
+    ? { level: 'good', verdict: '양호', summary: '착용 중 오차가 제조사 사양 이내입니다.', findings: F }
+    : { level: 'warn', verdict: '점검 권장', summary: '쿼츠 오차가 사양을 벗어났습니다.', findings: F };
+}
+
 const HORIZONTAL = new Set(POSITIONS.filter(p => p.horizontal).map(p => p.key));
 
 export function latestByPosition(readings: Reading[]): Map<string, Reading> {
@@ -51,9 +78,7 @@ export function positionalSpread(readings: Reading[], sinceMs = 0): { spread: nu
 
 export function diagnose(w: Watch, readingsAll: Reading[], cyclesAll: Cycle[], now = Date.now()): Diagnosis {
   const F: Finding[] = [];
-  if (w.movement === 'quartz') {
-    return { level: 'none', verdict: '쿼츠', summary: '쿼츠 시계는 타임그래퍼·정밀 로그 진단에서 제외됩니다.', findings: [] };
-  }
+  if (w.movement === 'quartz') return diagnoseQuartz(w, cyclesAll);
   const readings = readingsAll.filter(r => r.watchId === w.id).sort((a, b) => a.at - b.at);
   const recent = readings.filter(r => now - r.at < 90 * 86400e3);
   const cycles = cyclesAll.filter(c => c.watchId === w.id).sort((a, b) => a.startedAt - b.startedAt);

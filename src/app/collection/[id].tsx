@@ -40,7 +40,9 @@ export default function WatchDetail() {
   const t0 = readings.length ? readings[0].at : 0;
   const lc = levelColors(dg.level, t);
   const src = SRC_LABEL[w.spec.src];
-  const range = w.spec.accMin != null && w.spec.accMax != null ? `${fmtRate(w.spec.accMin, 0)}/${fmtRate(w.spec.accMax, 0)} s/d` : '—';
+  const range = w.spec.accMin != null && w.spec.accMax != null
+    ? (w.movement === 'quartz' ? `±${Math.round(w.spec.accMax * 30.4)} 초/월` : `${fmtRate(w.spec.accMin, 0)}/${fmtRate(w.spec.accMax, 0)} s/d`)
+    : '—';
 
   const ledger: [string, string][] = [
     ['칼리버', w.caliber || '—'],
@@ -48,7 +50,7 @@ export default function WatchDetail() {
     ['진동수', w.bph ? `${w.bph.toLocaleString()} bph (${(w.bph / 7200).toFixed(1)} Hz)` : '자동 감지'],
     ['리프트각', w.liftAngle ? `${w.liftAngle}°` : `— (기본 ${data.settings.defaultLiftAngle}°)`],
     ['사양 일오차', range],
-    ['파워리저브 사양/실측', `${w.spec.powerReserveH ?? '—'} h / ${w.prMeasured ?? '—'} h`],
+    ['파워리저브 사양/실측', w.movement === 'quartz' && w.spec.powerReserveH ? `완충 약 ${Math.round(w.spec.powerReserveH / 24)}일` : `${w.spec.powerReserveH ?? '—'} h / ${w.prMeasured ?? '—'} h`],
     ['보석', w.spec.jewels != null ? `${w.spec.jewels}` : '—'],
     ['권장 오버홀', w.spec.serviceYears != null ? `${w.spec.serviceYears}년` : '—'],
     ['입수 / 최근 오버홀', `${w.acquired || '—'} / ${w.lastService || '—'}`],
@@ -73,7 +75,7 @@ export default function WatchDetail() {
       </Row>
 
       <Row gap={S.sm} wrap>
-        <Button kind="primary" title="측정" style={{ flexGrow: 1 }} onPress={() => router.navigate({ pathname: '/', params: { watchId: w.id } })} />
+        {w.movement !== 'quartz' ? <Button kind="primary" title="측정" style={{ flexGrow: 1 }} onPress={() => router.navigate({ pathname: '/', params: { watchId: w.id } })} /> : null}
         <Button title={open ? '정밀 로그 보기' : '정밀 로그 시작'} style={{ flexGrow: 1 }} onPress={() => {
           const c = open ?? startCycle(w.id);
           router.navigate(`/precision/${c.id}`);

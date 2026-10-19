@@ -13,7 +13,7 @@ export default function PrecisionList() {
   const t = useT();
   const { data, loaded } = useStore();
   const [picking, setPicking] = useState(false);
-  const watches = useMemo(() => data.watches.filter(w => !w.archived && w.movement !== 'quartz').sort((a, b) => a.order - b.order), [data.watches]);
+  const watches = useMemo(() => data.watches.filter(w => !w.archived).sort((a, b) => a.order - b.order), [data.watches]);
 
   const rows = useMemo(() => data.cycles
     .map(c => {
