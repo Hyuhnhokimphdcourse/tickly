@@ -16,6 +16,7 @@ export function InputPanel({ diag, running }: { diag: InputDiag; running: boolea
   const frac = Math.max(0, Math.min(1, (pk + 80) / 80)); // −80 dBFS … 0 dBFS
   const noAudio = running && diag.wall > 2.5 && diag.seconds < 0.2;
   const silent = running && !noAudio && diag.seconds > 2 && pk < -65;
+  const weak = running && !noAudio && !silent && diag.seconds > 2 && pk < -50;
   const clipping = pk > -1;
   const pts = diag.scope.map((v, i) => `${(i / Math.max(1, diag.scope.length - 1)) * w},${h - 3 - v * (h - 8)}`).join(' ');
   return (
@@ -42,7 +43,9 @@ export function InputPanel({ diag, running }: { diag: InputDiag; running: boolea
           ? '마이크에서 소리가 들어오지 않습니다. 다른 앱이 마이크를 쓰고 있지 않은지 확인하고, 페이지를 새로고침한 뒤 다시 시작하세요.'
           : silent
             ? '입력이 거의 없습니다. 폰 하단 마이크 구멍을 케이스백에 직접 대세요(케이스를 벗기면 더 좋습니다).'
-            : clipping
+            : weak
+              ? '입력이 약합니다(일오차·비트에러는 측정되지만 진폭은 안 나올 수 있음). 폰 하단 마이크를 케이스백에 밀착하고 조용한 곳에서 재세요.'
+              : clipping
               ? '입력이 너무 큽니다. 폰을 살짝 띄우거나 각도를 바꿔 보세요.'
               : '위 파형에 규칙적인 뾰족한 선(틱)이 보이면 소리가 잘 들어오는 상태입니다.'}
       </T>

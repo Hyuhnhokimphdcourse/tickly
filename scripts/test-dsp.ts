@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { Timegrapher } from '../src/dsp/timegrapher.ts';
 import { synth, type SynthOptions } from './synth.ts';
 
@@ -20,6 +21,8 @@ const cases: Case[] = [
   { name: '44.1 kHz input', fs: 44100, autoBph: true },
   { name: '28800 two 12 ms audio glitches', glitches: [11.3, 21.7], autoBph: true },
   { name: '28800 glitch −7 ms + drops', glitches: [15.2], stepMs: -7, dropProb: 0.1, autoBph: true },
+  { name: '28800 glitch −7 ms + drops, fixed BPH', glitches: [15.2], stepMs: -7, dropProb: 0.1 },
+  { name: '21600 weak ticks in loud noise', bph: 21600, rate: 4, noise: 0.12, hum: 0.5, liftAngle: 49, autoBph: true, allowNoAmp: true },
   { name: '25200 , −8 s/d, BE 2.5', bph: 25200, rate: -8, beatErrorMs: 2.5, amplitude: 230, autoBph: true },
 ];
 
@@ -46,5 +49,27 @@ for (const c of cases) {
     `amp=${r.amplitude?.toFixed(0)} (Δ${errAmp.toFixed(0)})  q=${(r.quality * 100).toFixed(0)}% ${r.beats}/${r.expected} jit=${r.jitterMs?.toFixed(3)}ms`,
   );
 }
+// ---- real recordings (iPhone Chrome, phone on the crystal) ----
+interface RealCase { file: string; name: string; bph: number; liftAngle: number; rate: [number, number] }
+const real: RealCase[] = [
+  // Citizen NY0040 (cal. 8203), very weak input (peak ≈ −61 dBFS, ticks ≈ 6 dB above noise)
+  { file: 'ny0040-iphone-chrome.wav', name: 'real NY0040 weak, auto-BPH', bph: 21600, liftAngle: 49, rate: [2, 6] },
+];
+for (const c of real) {
+  const b = readFileSync(new URL(`./fixtures/${c.file}`, import.meta.url));
+  const fs = b.readUInt32LE(24), n = (b.length - 44) / 2;
+  const pcm = new Float32Array(n);
+  for (let i = 0; i < n; i++) pcm[i] = b.readInt16LE(44 + i * 2) / 32768;
+  const tg = new Timegrapher({ sampleRate: fs, bph: null, liftAngle: c.liftAngle, windowSeconds: n / fs });
+  for (let i = 0; i < n; i += 4096) {
+    tg.push(pcm.subarray(i, Math.min(n, i + 4096)));
+    if ((i / 4096) % 6 === 0) tg.analyze();
+  }
+  const r = tg.analyze();
+  const ok = r.bph === c.bph && r.rate != null && r.rate >= c.rate[0] && r.rate <= c.rate[1];
+  if (!ok) fail++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${c.name.padEnd(40)} bph=${r.bph} state=${r.state} rate=${r.rate?.toFixed(2)} BE=${r.beatError?.toFixed(2)} amp=${r.amplitude?.toFixed(0)} q=${(r.quality * 100).toFixed(0)}% ${r.beats}/${r.expected}`);
+}
+
 console.log(fail ? `\n${fail} failing case(s)` : '\nall cases pass');
 process.exit(fail ? 1 : 0);

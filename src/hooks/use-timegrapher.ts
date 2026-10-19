@@ -67,16 +67,17 @@ class Ring {
   }
 }
 
+/** 32-bit float WAV: quiet inputs (ticks of a few 16-bit LSB) survive without quantisation. */
 export function pcmToWav(pcm: Float32Array, sampleRate: number): Uint8Array {
   const n = pcm.length;
-  const buf = new ArrayBuffer(44 + n * 2);
+  const buf = new ArrayBuffer(44 + n * 4);
   const v = new DataView(buf);
   const w = (o: number, s: string) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
-  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
-  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-  v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
-  w(36, 'data'); v.setUint32(40, n * 2, true);
-  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 32767, true);
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 4, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 3, true); v.setUint16(22, 1, true); // format 3 = IEEE float
+  v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * 4, true); v.setUint16(32, 4, true); v.setUint16(34, 32, true);
+  w(36, 'data'); v.setUint32(40, n * 4, true);
+  for (let i = 0; i < n; i++) v.setFloat32(44 + i * 4, pcm[i], true);
   return new Uint8Array(buf);
 }
 

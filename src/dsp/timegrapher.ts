@@ -140,7 +140,8 @@ export class Timegrapher {
 
   private resetBeats() {
     this.beats = [];
-    this.scanFrom = Math.max(0, this.envLen - Math.round(this.fsEnv * 0.5));
+    // rescan what is still in the envelope buffer, so a (re)detected BPH can lock immediately
+    this.scanFrom = Math.max(1, this.envLen - Math.round(this.fsEnv * Math.min(this.windowSeconds, 20)));
     this.lastPeakIdx = -1e9;
   }
 
@@ -171,7 +172,6 @@ export class Timegrapher {
     const start = this.envLen - Math.floor(secs * this.fsEnv);
     const n = Math.floor((this.envLen - start) / pool);
     const c = new Float32Array(n);
-    let mean = 0;
     for (let i = 0; i < n; i++) {
       let m = 0;
       for (let j = 0; j < pool; j++) { const v = this.env[start + i * pool + j]; if (v > m) m = v; }
@@ -188,10 +188,15 @@ export class Timegrapher {
       const j = i - half;
       if (j >= 0 && j < n) sm[j] = acc;
     }
-    mean = 0;
-    for (let i = 0; i < n; i++) { c[i] = sm[i]; mean += c[i]; }
-    mean /= n;
-    for (let i = 0; i < n; i++) c[i] -= mean;
+    // remove slow loudness drift (handling noise, breathing) with a centred 0.2 s moving average,
+    // otherwise it correlates at every short lag and biases detection toward high BPH
+    const W = Math.max(3, Math.round(0.1 * cr));
+    const pre = new Float64Array(n + 1);
+    for (let i = 0; i < n; i++) pre[i + 1] = pre[i] + sm[i];
+    for (let i = 0; i < n; i++) {
+      const a = Math.max(0, i - W), b = Math.min(n, i + W + 1);
+      c[i] = sm[i] - (pre[b] - pre[a]) / (b - a);
+    }
     const ac = (lag: number) => {
       let s = 0;
       for (let i = 0; i + lag < n; i++) s += c[i] * c[i + lag];
@@ -473,7 +478,7 @@ export class Timegrapher {
       const ev: number[] = [], od: number[] = [];
       for (let i = 0; i < bs.length; i++) {
         if (!use[i]) continue;
-        const r = bs[i].t1 - b * ks[i];
+        const r = bs[i].t1 - a[seg[i]] - b * ks[i]; // per-segment intercept: glitch steps must not leak into BE
         (ks[i] % 2 === 0 ? ev : od).push(r);
       }
       const med = (v: number[]) => { const s = v.slice().sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
